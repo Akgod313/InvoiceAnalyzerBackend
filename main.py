@@ -40,7 +40,7 @@ def process_invoice(image_path, database_content=""):
         You MUST return a JSON object that EXACTLY matches this structure:
         {{
             "vendor_name": "Name of the shop/vendor issuing the invoice",
-            "vendor_address": "The full physical address of the vendor/shop",
+            "vendor_address": "The full physical address of the vendor/shop(usually there is Bangalore in that sentence)",
             "invoice_no": "INV-123",
             "invoice_date": "DD-MM-YYYY",
             "invoice_total": 2600.00,
