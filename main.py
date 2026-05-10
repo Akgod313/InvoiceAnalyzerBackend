@@ -45,13 +45,20 @@ def process_invoice(image_path):
                 database_content = file.read()
 
         prompt = f"""
-        Extract the details from this invoice image. 
-        Look carefully for the Vendor Name, Invoice Number, and Date.
+        Analyze this invoice image and extract details into a JSON object. 
+        Look carefully for the Vendor Name, Invoice Number, Date, the type of Invoice and GSTIN number.
+        
+        NEW REQUIREMENTS:
+        1. invoice_type: Identify if it is a 'Tax Invoice', 'Proforma', etc. (usually at the top).
+        2. paid_to: Identify the name of the person/company the invoice is being paid to (usually follows 'To:').
+        3. gstin_numbers: Extract ALL GSTIN numbers found on the document as a list.
         
         CRITICAL RULES FOR "items":
         - Extract ONLY physical products/materials. 
         - DO NOT extract "Subtotal", "Total", "CGST", "SGST", "IGST", "Round off", or "Grand Total" as items. 
-        
+        - Include "quantity" for each item.
+        - Include "unit_price" (Calculate this by dividing the item amount by the quantity).
+
         CATEGORIZATION RULES:
         1. EXACT MATCH: If the item is in this database, use the exact Type and Sub_type listed:
         --- START DATABASE ---
@@ -76,11 +83,16 @@ def process_invoice(image_path):
             "invoice_no": "INV-123",
             "invoice_date": "DD-MM-YYYY",
             "invoice_total": 2600.00,
+            "invoice_type": "e.g. Tax Invoice",
+            "paid_to": "Name of receiver",
+            "gstin_numbers": ["GSTIN1", "GSTIN2"],
             "items": [
                 {{
-                    "description": "Product Name - 2 nos",
+                    "description": "Product Name",
                     "type": "Exact Type from list",
                     "sub_type": "Exact Sub-type from list",
+                    "quantity": 2,
+                    "unit_price": 500.00,
                     "amount": 1000.00,
                     "tax_percentage": 18
                 }}
