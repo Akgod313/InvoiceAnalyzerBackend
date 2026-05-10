@@ -1,67 +1,66 @@
+# api.py
 import os
+import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-import shutil
 
-# --- CRITICAL: IMPORT YOUR LOGIC ---
-# This assumes your extraction logic is in a file named main.py
+# Import your extraction logic from main.py
 try:
     from main import process_invoice
 except ImportError:
-    # Fallback if you renamed your logic file
+    # This prevents the whole server from crashing if main.py has an issue
     def process_invoice(path):
-        return {"error": "process_invoice function not found in main.py"}
+        return {"error": "Main logic file (main.py) or process_invoice function not found."}
 
 app = FastAPI()
 
 # --- CORS SETTINGS ---
-# This allows your local React app and your future Vercel app to talk to Render
+# This allows your separate Vercel frontend to talk to this Render backend.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For initial deployment, allow all. Restrict later for security.
+    allow_origins=["*"],  # Allows all domains. Best for testing; you can restrict to your Vercel URL later.
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- HEALTH CHECK ROUTE ---
-# Visit your-render-url.onrender.com/ in a browser to see if the server is up
+# --- HEALTH CHECK ---
+# If you visit your-url.onrender.com/ in a browser, you should see this JSON.
 @app.get("/")
-def read_root():
+def home():
     return {
-        "status": "online",
-        "message": "Quotation Extractor API is running",
-        "database_connected": os.environ.get("DATABASE_URL") is not None
+        "status": "online", 
+        "message": "Quotation API is active",
+        "database_configured": "DATABASE_URL" in os.environ
     }
 
-# --- MAIN ANALYSIS ROUTE ---
+# --- ANALYSIS ROUTE ---
 @app.post("/analyze")
-async def analyze_invoice(file: UploadFile = File(...)):
-    # 1. Create a temporary file path
-    temp_file_path = f"temp_{file.filename}"
+async def analyze(file: UploadFile = File(...)):
+    # Create a unique temporary filename
+    temp_path = f"temp_{file.filename}"
     
     try:
-        # 2. Save the uploaded image locally so Gemini can read it
-        with open(temp_file_path, "wb") as buffer:
+        # Save the uploaded file from the frontend to the server temporarily
+        with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # 3. Run your extraction logic from main.py
-        results = process_invoice(temp_file_path)
+        # Run the Gemini extraction logic
+        results = process_invoice(temp_path)
         
-        # 4. Return the results to the React frontend
         return results
 
     except Exception as e:
-        print(f"Error during analysis: {str(e)}")
+        print(f"Server Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
     finally:
-        # 5. Clean up: Delete the temporary image file after processing
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        # Always delete the temp file so the server doesn't get cluttered
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
-# --- RENDER STARTUP LOGIC ---
+# --- STARTUP LOGIC ---
 if __name__ == "__main__":
-    # Render provides a 'PORT' environment variable. If not found, use 10000.
+    # Render automatically sets a 'PORT' environment variable
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
