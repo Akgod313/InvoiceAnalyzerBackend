@@ -5,9 +5,18 @@ import PIL.Image
 import json
 import re
 import os
-from config import GEMINI_API_KEY
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+db_path = os.path.join(BASE_DIR, "master_database.csv")
+
+if os.path.exists(db_path):
+    with open(db_path, "r", encoding="utf-8") as file:
+        database_content = file.read()
+else:
+    database_content = "No database found."
+    print("WARNING: master_database.csv missing on server!")
 # 1. Initialize Client
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # 2. Use the stable model
