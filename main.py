@@ -10,7 +10,6 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 def process_invoice(image_path, database_content=""):
     img = Image.open(image_path)
 
-    # Your Strict Prompt
     prompt = f"""
         Analyze this invoice image and extract details into a JSON object. 
         Look carefully for the Vendor Name, Invoice Number, Date, the type of Invoice and GSTIN number.
@@ -58,7 +57,7 @@ def process_invoice(image_path, database_content=""):
                 }}
             ]
         }}
-        """
+    """
 
     try:
         response = client.models.generate_content(
@@ -66,27 +65,30 @@ def process_invoice(image_path, database_content=""):
             contents=[prompt, img]
         )
 
-        # Remove markdown formatting if Gemini includes it
-        clean_text = response.text.replace("```json", "").replace("```", "").strip()
-        data = json.loads(clean_text)
+        # Clean the response text
+        text = response.text
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0]
+        
+        data = json.loads(text.strip())
 
-        # Handle list responses
         if isinstance(data, list):
             data = data[0]
 
-        # Calculation Safety: If Gemini misses quantity or unit_price, we calculate it here
+        # Ensure items exist and calculate unit_price if missing
+        if "items" not in data:
+            data["items"] = []
+            
         for item in data.get("items", []):
-            if "quantity" not in item or not item["quantity"]:
-                item["quantity"] = 1
+            qty = float(item.get("quantity", 1))
+            amt = float(item.get("amount", 0))
             if "unit_price" not in item or item["unit_price"] == 0:
-                try:
-                    item["unit_price"] = round(float(item["amount"]) / float(item["quantity"]), 2)
-                except:
-                    item["unit_price"] = item["amount"]
+                item["unit_price"] = round(amt / qty, 2) if qty > 0 else amt
 
         return data
 
     except Exception as e:
-        print(f"--- EXTRACTION ERROR ---: {str(e)}")
-        # Returning a structured error so the frontend doesn't break
+        print(f"Extraction Error: {e}")
         return {"error": str(e), "items": []}
