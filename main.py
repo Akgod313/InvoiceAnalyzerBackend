@@ -48,7 +48,7 @@ def process_invoice(image_path, database_content=""):
             "paid_to": "The exact name written after 'To:', 'M/s', or 'Billed To' (The customer receiving the goods)",
             "gstin_numbers": ["Number 1", "Number 2"],
             "items": [
-                {
+                {{
                     "description": "Product Name",
                     "hsn_sac": "Extract HSN or SAC code (if present)", 
                     "type": "Exact Type from list",
@@ -57,7 +57,7 @@ def process_invoice(image_path, database_content=""):
                     "unit_price": 0.00,
                     "amount": 1000.00,
                     "tax_percentage": 18
-                }
+                }}
             ]
             ]
         }}
