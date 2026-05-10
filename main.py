@@ -10,10 +10,10 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 def process_invoice(image_path, database_content=""):
     img = Image.open(image_path)
 
-    # UPDATED PROMPT: Clarified the "paid_to" rule so Gemini doesn't get confused
+    # UPDATED PROMPT: Added vendor_address to the required JSON structure
     prompt = f"""
         Analyze this invoice image and extract details into a JSON object. 
-        Look carefully for the Vendor Name, Invoice Number, Date, the type of Invoice and GSTIN number.
+        Look carefully for the Vendor Name, Vendor Address, Invoice Number, Date, the type of Invoice and GSTIN number.
         
         CRITICAL RULES FOR "items":
         - Extract ONLY physical products/materials. 
@@ -40,6 +40,7 @@ def process_invoice(image_path, database_content=""):
         You MUST return a JSON object that EXACTLY matches this structure:
         {{
             "vendor_name": "Name of the shop/vendor issuing the invoice",
+            "vendor_address": "The full physical address of the vendor/shop",
             "invoice_no": "INV-123",
             "invoice_date": "DD-MM-YYYY",
             "invoice_total": 2600.00,
@@ -62,11 +63,10 @@ def process_invoice(image_path, database_content=""):
 
     try:
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-2.0-flash",
             contents=[prompt, img]
         )
 
-        # Clean the response text
         text = response.text
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0]
@@ -78,7 +78,6 @@ def process_invoice(image_path, database_content=""):
         if isinstance(data, list):
             data = data[0]
 
-        # Ensure items exist and calculate unit_price if missing
         if "items" not in data:
             data["items"] = []
             
