@@ -21,26 +21,28 @@ app.add_middleware(
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def save_to_database(data):
-    # If there is an error in extraction, don't save it
-    if "error" in data or not DATABASE_URL:
-        return False
+    # Check if there was an AI error first
+    if "error" in data:
+        print("❌ Skipping DB save due to extraction error.")
+        return "Skipped: Extraction Error"
+
+    # Check if the URL is actually loaded
+    if not DATABASE_URL:
+        print("❌ DATABASE_URL is not set in Render!")
+        return "Error: Missing DATABASE_URL in Render"
 
     try:
-        # Connect to Neon
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
 
-        # Join the GSTIN array into a single comma-separated string
         gstin_str = ", ".join(data.get("gstin_numbers", [])) if data.get("gstin_numbers") else "N/A"
-
-        # Convert the items list into a JSON string for the JSONB column
         items_json = json.dumps(data.get("items", []))
 
-        # Insert query
+        # THE FIX: Added ::jsonb to explicitly cast the text to a Postgres JSON object
         insert_query = """
             INSERT INTO invoices 
             (vendor_name, vendor_address, invoice_no, invoice_date, invoice_type, paid_to, gstin_numbers, items)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
         """
         
         cursor.execute(insert_query, (
@@ -54,16 +56,16 @@ def save_to_database(data):
             items_json
         ))
 
-        # Commit and close
         conn.commit()
         cursor.close()
         conn.close()
         print("✅ Successfully saved to Neon Database!")
-        return True
+        return "Success"
 
     except Exception as e:
-        print("❌ Database Error:", str(e))
-        return False
+        error_msg = str(e)
+        print(f"❌ Database Error: {error_msg}")
+        return f"DB Error: {error_msg}"
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
@@ -72,21 +74,19 @@ async def analyze(file: UploadFile = File(...)):
     with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # 1. Read your database logic for categorization
     db_content = ""
     if os.path.exists("master_database.csv"):
         with open("master_database.csv", "r") as f:
             db_content = f.read()
 
-    # 2. Extract data using Gemini (from main.py)
+    # Extract data using Gemini
     results = process_invoice(temp_path, database_content=db_content)
     
-    # 3. Save to Neon Database
-    save_to_database(results)
+    # Attempt to save to Neon AND attach the status to the results we send back
+    db_status = save_to_database(results)
+    results["database_save_status"] = db_status
 
-    # 4. Clean up the temp image
     if os.path.exists(temp_path):
         os.remove(temp_path)
 
-    # 5. Send results back to React frontend
     return results
