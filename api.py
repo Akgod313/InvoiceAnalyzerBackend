@@ -1,5 +1,4 @@
 import os
-import json
 import psycopg2
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,39 +30,62 @@ def save_to_database(data):
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
 
-        # Join the GSTIN array into a single comma-separated string
         gstin_str = ", ".join(data.get("gstin_numbers", [])) if data.get("gstin_numbers") else "N/A"
         
-        # Convert the items list into a JSON string for the JSONB column
-        items_json = json.dumps(data.get("items", []))
-
-        # Insert everything into the single table
         insert_query = """
             INSERT INTO invoices 
-            (vendor_name, vendor_address, invoice_no, invoice_date, invoice_type, paid_to, gstin_numbers, items)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            (vendor_name, vendor_address, invoice_no, invoice_date, invoice_type, paid_to, gstin_numbers,
+             description, hsn_sac, type, sub_type, tax_percentage, quantity, unit_price, amount)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
+
+        items = data.get("items", [])
         
-        cursor.execute(insert_query, (
-            data.get("vendor_name"),
-            data.get("vendor_address"),
-            data.get("invoice_no"),
-            data.get("invoice_date"),
-            data.get("invoice_type"),
-            data.get("paid_to"),
-            gstin_str,
-            items_json
-        ))
+        # If there are items, loop through and attach the header info to EVERY item row
+        if items:
+            flat_data = [
+                (
+                    data.get("vendor_name"),
+                    data.get("vendor_address"),
+                    data.get("invoice_no"),
+                    data.get("invoice_date"),
+                    data.get("invoice_type"),
+                    data.get("paid_to"),
+                    gstin_str,
+                    item.get("description"),
+                    item.get("hsn_sac"),
+                    item.get("type"),
+                    item.get("sub_type"),
+                    item.get("tax_percentage"),
+                    item.get("quantity"),
+                    item.get("unit_price"),
+                    item.get("amount")
+                )
+                for item in items
+            ]
+            cursor.executemany(insert_query, flat_data)
+            row_count = len(flat_data)
+        else:
+            # Fallback just in case an invoice scanned with 0 items, save the header anyway
+            cursor.execute(insert_query, (
+                data.get("vendor_name"), data.get("vendor_address"), data.get("invoice_no"), 
+                data.get("invoice_date"), data.get("invoice_type"), data.get("paid_to"), gstin_str,
+                None, None, None, None, None, None, None, None
+            ))
+            row_count = 1
 
         conn.commit()
         cursor.close()
         conn.close()
-        print("✅ Successfully saved to Neon Database!")
+        
+        print(f"✅ Successfully saved {row_count} flat rows to Neon!")
         return "Success"
 
     except Exception as e:
         error_msg = str(e)
         print(f"❌ Database Error: {error_msg}")
+        if 'conn' in locals():
+            conn.rollback() 
         return f"DB Error: {error_msg}"
 
 @app.post("/analyze")
