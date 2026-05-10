@@ -10,6 +10,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 def process_invoice(image_path, database_content=""):
     img = Image.open(image_path)
 
+    # UPDATED PROMPT: Clarified the "paid_to" rule so Gemini doesn't get confused
     prompt = f"""
         Analyze this invoice image and extract details into a JSON object. 
         Look carefully for the Vendor Name, Invoice Number, Date, the type of Invoice and GSTIN number.
@@ -38,12 +39,12 @@ def process_invoice(image_path, database_content=""):
         
         You MUST return a JSON object that EXACTLY matches this structure:
         {{
-            "vendor_name": "Name of Vendor",
+            "vendor_name": "Name of the shop/vendor issuing the invoice",
             "invoice_no": "INV-123",
             "invoice_date": "DD-MM-YYYY",
             "invoice_total": 2600.00,
             "invoice_type": "Extract Type (Tax Invoice, etc.)",
-            "paid_to": "Name of person/company being paid",
+            "paid_to": "The exact name written after 'To:', 'M/s', or 'Billed To' (The customer receiving the goods)",
             "gstin_numbers": ["Number 1", "Number 2"],
             "items": [
                 {{
@@ -61,7 +62,7 @@ def process_invoice(image_path, database_content=""):
 
     try:
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-2.0-flash",
             contents=[prompt, img]
         )
 
