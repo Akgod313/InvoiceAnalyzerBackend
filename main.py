@@ -10,7 +10,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 def process_invoice(image_path, database_content=""):
     img = Image.open(image_path)
 
-    # UPDATED PROMPT: Added vendor_address to the required JSON structure
+    # Note the double curly braces {{ }} inside the items array to prevent f-string errors!
     prompt = f"""
         Analyze this invoice image and extract details into a JSON object. 
         Look carefully for the Vendor Name, Vendor Address, Invoice Number, Date, the type of Invoice and GSTIN number.
@@ -40,7 +40,7 @@ def process_invoice(image_path, database_content=""):
         You MUST return a JSON object that EXACTLY matches this structure:
         {{
             "vendor_name": "Name of the shop/vendor issuing the invoice",
-            "vendor_address": "The full physical address of the vendor/shop(usually there is Bangalore in that sentence)",
+            "vendor_address": "The full physical address of the vendor/shop",
             "invoice_no": "INV-123",
             "invoice_date": "DD-MM-YYYY",
             "invoice_total": 2600.00,
@@ -59,13 +59,12 @@ def process_invoice(image_path, database_content=""):
                     "tax_percentage": 18
                 }}
             ]
-            ]
         }}
     """
 
     try:
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-2.0-flash",
             contents=[prompt, img]
         )
 
