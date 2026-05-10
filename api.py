@@ -4,6 +4,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import shutil
 from main import process_invoice
+from fastapi import FastAPI, UploadFile, File, Request
 
 app = FastAPI()
 
@@ -101,11 +102,15 @@ async def analyze(file: UploadFile = File(...)):
             db_content = f.read()
 
     results = process_invoice(temp_path, database_content=db_content)
-    
-    db_status = save_to_database(results)
-    results["database_save_status"] = db_status
 
     if os.path.exists(temp_path):
         os.remove(temp_path)
+
+@app.post("/save")
+async def save_invoice(request: Request):
+    # This catches the edited data directly from your React frontend
+    data = await request.json()
+    status = save_to_database(data)
+    return {"status": status}
 
     return results
