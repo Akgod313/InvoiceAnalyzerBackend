@@ -1,10 +1,10 @@
 import os
+import json
 import psycopg2
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 import shutil
 from main import process_invoice
-from fastapi import FastAPI, UploadFile, File, Request
 
 app = FastAPI()
 
@@ -42,7 +42,6 @@ def save_to_database(data):
 
         items = data.get("items", [])
         
-        # If there are items, loop through and attach the header info to EVERY item row
         if items:
             flat_data = [
                 (
@@ -65,21 +64,17 @@ def save_to_database(data):
                 for item in items
             ]
             cursor.executemany(insert_query, flat_data)
-            row_count = len(flat_data)
         else:
-            # Fallback just in case an invoice scanned with 0 items, save the header anyway
+            # Fallback for 0 items
             cursor.execute(insert_query, (
                 data.get("vendor_name"), data.get("vendor_address"), data.get("invoice_no"), 
                 data.get("invoice_date"), data.get("invoice_type"), data.get("paid_to"), gstin_str,
                 None, None, None, None, None, None, None, None
             ))
-            row_count = 1
 
         conn.commit()
         cursor.close()
         conn.close()
-        
-        print(f"✅ Successfully saved {row_count} flat rows to Neon!")
         return "Success"
 
     except Exception as e:
@@ -88,6 +83,7 @@ def save_to_database(data):
         if 'conn' in locals():
             conn.rollback() 
         return f"DB Error: {error_msg}"
+
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
@@ -101,16 +97,19 @@ async def analyze(file: UploadFile = File(...)):
         with open("master_database.csv", "r") as f:
             db_content = f.read()
 
+    # Extract data using Gemini
     results = process_invoice(temp_path, database_content=db_content)
-
+    
     if os.path.exists(temp_path):
         os.remove(temp_path)
 
+    # 🚨 THIS WAS THE MISSING LINE! It sends the data back to React.
+    return results
+
+
 @app.post("/save")
 async def save_invoice(request: Request):
-    # This catches the edited data directly from your React frontend
+    # This catches the edited data directly from your React frontend Upload button
     data = await request.json()
     status = save_to_database(data)
     return {"status": status}
-
-    return results
