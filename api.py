@@ -1,66 +1,92 @@
-# api.py
 import os
-import shutil
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import json
+import psycopg2
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-
-# Import your extraction logic from main.py
-try:
-    from main import process_invoice
-except ImportError:
-    # This prevents the whole server from crashing if main.py has an issue
-    def process_invoice(path):
-        return {"error": "Main logic file (main.py) or process_invoice function not found."}
+import shutil
+from main import process_invoice
 
 app = FastAPI()
 
-# --- CORS SETTINGS ---
-# This allows your separate Vercel frontend to talk to this Render backend.
+# Allow your Vercel frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all domains. Best for testing; you can restrict to your Vercel URL later.
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- HEALTH CHECK ---
-# If you visit your-url.onrender.com/ in a browser, you should see this JSON.
-@app.get("/")
-def home():
-    return {
-        "status": "online", 
-        "message": "Quotation API is active",
-        "database_configured": "DATABASE_URL" in os.environ
-    }
+# Fetch the database URL from Render environment variables
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# --- ANALYSIS ROUTE ---
-@app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
-    # Create a unique temporary filename
-    temp_path = f"temp_{file.filename}"
-    
+def save_to_database(data):
+    # If there is an error in extraction, don't save it
+    if "error" in data or not DATABASE_URL:
+        return False
+
     try:
-        # Save the uploaded file from the frontend to the server temporarily
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Connect to Neon
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
+        # Join the GSTIN array into a single comma-separated string
+        gstin_str = ", ".join(data.get("gstin_numbers", [])) if data.get("gstin_numbers") else "N/A"
+
+        # Convert the items list into a JSON string for the JSONB column
+        items_json = json.dumps(data.get("items", []))
+
+        # Insert query
+        insert_query = """
+            INSERT INTO invoices 
+            (vendor_name, vendor_address, invoice_no, invoice_date, invoice_type, paid_to, gstin_numbers, items)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
         
-        # Run the Gemini extraction logic
-        results = process_invoice(temp_path)
-        
-        return results
+        cursor.execute(insert_query, (
+            data.get("vendor_name"),
+            data.get("vendor_address"),
+            data.get("invoice_no"),
+            data.get("invoice_date"),
+            data.get("invoice_type"),
+            data.get("paid_to"),
+            gstin_str,
+            items_json
+        ))
+
+        # Commit and close
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("✅ Successfully saved to Neon Database!")
+        return True
 
     except Exception as e:
-        print(f"Server Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-    finally:
-        # Always delete the temp file so the server doesn't get cluttered
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        print("❌ Database Error:", str(e))
+        return False
 
-# --- STARTUP LOGIC ---
-if __name__ == "__main__":
-    # Render automatically sets a 'PORT' environment variable
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+@app.post("/analyze")
+async def analyze(file: UploadFile = File(...)):
+    temp_path = f"temp_{file.filename}"
+    
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # 1. Read your database logic for categorization
+    db_content = ""
+    if os.path.exists("master_database.csv"):
+        with open("master_database.csv", "r") as f:
+            db_content = f.read()
+
+    # 2. Extract data using Gemini (from main.py)
+    results = process_invoice(temp_path, database_content=db_content)
+    
+    # 3. Save to Neon Database
+    save_to_database(results)
+
+    # 4. Clean up the temp image
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+
+    # 5. Send results back to React frontend
+    return results
